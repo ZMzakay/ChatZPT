@@ -8,24 +8,59 @@ import {
 // ========================================
 
 const MODELS = {
-    "1.5B": "Qwen2.5-1.5B-Instruct-q4f16_1-MLC",
+    "1.5B":
+        "Qwen2.5-1.5B-Instruct-q4f16_1-MLC",
 
-    "1B": "Llama-3.2-1B-Instruct-q4f16_1-MLC",
+    "1B":
+        "Llama-3.2-1B-Instruct-q4f16_1-MLC",
 
-    "0.5B": "Qwen2.5-0.5B-Instruct-q4f16_1-MLC",
+    "0.5B":
+        "Qwen2.5-0.5B-Instruct-q4f16_1-MLC",
 
-    // ~0.135B, closest lightweight model
-    "0.1B": "SmolLM2-135M-Instruct-q0f16-MLC"
+    "0.1B":
+        "SmolLM2-135M-Instruct-q0f16-MLC"
 };
 
 
 // ========================================
-// SETTINGS
+// DEVICE DETECTION
 // ========================================
 
-const MAX_HISTORY = 6;
-const MAX_INPUT_LENGTH = 3000;
-const MAX_TOKENS = 300;
+const isAppleMobile =
+    /iPhone|iPad|iPod/i.test(
+        navigator.userAgent
+    );
+
+const isAndroid =
+    /Android/i.test(
+        navigator.userAgent
+    );
+
+
+// ========================================
+// DEFAULT MODEL
+// ========================================
+//
+// PC      -> 1B
+// iPhone  -> 0.5B
+// Android -> 0.5B
+//
+
+const DEFAULT_MODEL =
+    isAppleMobile || isAndroid
+        ? "0.5B"
+        : "1B";
+
+
+// ========================================
+// PERFORMANCE SETTINGS
+// ========================================
+
+const MAX_HISTORY = 4;
+
+const MAX_INPUT_LENGTH = 2500;
+
+const MAX_TOKENS = 250;
 
 
 // ========================================
@@ -33,16 +68,24 @@ const MAX_TOKENS = 300;
 // ========================================
 
 const messages =
-    document.getElementById("chatMessages");
+    document.getElementById(
+        "chatMessages"
+    );
 
 const input =
-    document.getElementById("userInput");
+    document.getElementById(
+        "userInput"
+    );
 
 const sendBtn =
-    document.getElementById("sendBtn");
+    document.getElementById(
+        "sendBtn"
+    );
 
 const newChatBtn =
-    document.getElementById("newChatBtn");
+    document.getElementById(
+        "newChatBtn"
+    );
 
 
 // ========================================
@@ -50,31 +93,42 @@ const newChatBtn =
 // ========================================
 
 let engine = null;
+
 let worker = null;
 
 let history = [];
 
 let generating = false;
+
 let loading = false;
 
 let currentModel = null;
 
+let loadingRequest = 0;
+
 
 // ========================================
-// ADD MESSAGE
+// MESSAGE
 // ========================================
 
-function addMessage(text, role) {
+function addMessage(
+    text,
+    role
+) {
 
     const wrapper =
-        document.createElement("div");
+        document.createElement(
+            "div"
+        );
 
     wrapper.className =
         `message ${role}`;
 
 
     const avatar =
-        document.createElement("div");
+        document.createElement(
+            "div"
+        );
 
     avatar.className =
         "avatar";
@@ -86,7 +140,9 @@ function addMessage(text, role) {
 
 
     const bubble =
-        document.createElement("div");
+        document.createElement(
+            "div"
+        );
 
     bubble.className =
         "bubble";
@@ -95,10 +151,18 @@ function addMessage(text, role) {
         text;
 
 
-    wrapper.appendChild(avatar);
-    wrapper.appendChild(bubble);
+    wrapper.appendChild(
+        avatar
+    );
 
-    messages.appendChild(wrapper);
+    wrapper.appendChild(
+        bubble
+    );
+
+    messages.appendChild(
+        wrapper
+    );
+
 
     messages.scrollTop =
         messages.scrollHeight;
@@ -109,13 +173,17 @@ function addMessage(text, role) {
 
 
 // ========================================
-// LOADING BOX
+// LOADING UI
 // ========================================
 
-function createLoadingUI(modelName) {
+function createLoadingUI(
+    modelName
+) {
 
     const box =
-        document.createElement("div");
+        document.createElement(
+            "div"
+        );
 
     box.id =
         "aiLoading";
@@ -127,33 +195,41 @@ function createLoadingUI(modelName) {
     box.innerHTML = `
 
         <div class="loading-title">
-            Loading ${modelName} AI...
+            Loading ${modelName}...
         </div>
 
         <div class="loading-bar-container">
+
             <div
                 id="loadingBar"
                 class="loading-bar">
             </div>
+
         </div>
 
         <div
             id="loadingText"
             class="loading-text">
-            Starting...
+
+            Starting AI...
+
         </div>
 
         <div
             id="loadingSpeed"
             class="loading-speed">
-            The first load can take a while.
-            Future loads should be faster because
-            your browser caches the model.
+
+            Loading model into your browser.
+            It will be cached for future visits.
+
         </div>
+
     `;
 
 
-    messages.appendChild(box);
+    messages.appendChild(
+        box
+    );
 
     messages.scrollTop =
         messages.scrollHeight;
@@ -164,7 +240,7 @@ function createLoadingUI(modelName) {
 
 
 // ========================================
-// UPDATE BUTTONS
+// BUTTON STATE
 // ========================================
 
 function updateModelButtons() {
@@ -175,30 +251,29 @@ function updateModelButtons() {
         );
 
 
-    buttons.forEach(button => {
+    buttons.forEach(
+        button => {
 
-        const name =
-            button.dataset.model;
+            const name =
+                button.dataset.model;
 
 
-        if (name === currentModel) {
-
-            button.classList.add(
-                "active-model"
+            button.classList.toggle(
+                "active-model",
+                name === currentModel
             );
 
-        } else {
 
-            button.classList.remove(
-                "active-model"
-            );
+            // IMPORTANT:
+            // Buttons stay enabled
+            // while loading so the user
+            // can change model.
+
+            button.disabled =
+                generating;
+
         }
-
-
-        button.disabled =
-            loading ||
-            generating;
-    });
+    );
 }
 
 
@@ -218,21 +293,22 @@ function createWorker() {
 
 
 // ========================================
-// STOP CURRENT ENGINE
+// STOP MODEL
 // ========================================
 
-function stopCurrentEngine() {
+function stopModel() {
 
-    try {
+    if (worker) {
 
-        if (worker) {
+        try {
             worker.terminate();
         }
-
-    } catch (_) {}
+        catch (_) {}
+    }
 
 
     worker = null;
+
     engine = null;
 }
 
@@ -241,38 +317,72 @@ function stopCurrentEngine() {
 // LOAD MODEL
 // ========================================
 
-async function loadModel(modelName) {
+async function loadModel(
+    modelName
+) {
 
-    if (loading) {
-        return false;
-    }
+    // ------------------------------------
+    // NEW REQUEST ID
+    // ------------------------------------
+
+    const request =
+        ++loadingRequest;
 
 
     loading = true;
 
+    currentModel =
+        modelName;
+
+
     updateModelButtons();
 
 
+    // ------------------------------------
+    // STOP OLD MODEL
+    // ------------------------------------
+
+    stopModel();
+
+
+    // ------------------------------------
+    // CLEAR OLD LOADING BOX
+    // ------------------------------------
+
+    const oldLoading =
+        document.getElementById(
+            "aiLoading"
+        );
+
+
+    if (oldLoading) {
+        oldLoading.remove();
+    }
+
+
+    // ------------------------------------
+    // CREATE LOADING UI
+    // ------------------------------------
+
     const loadingBox =
-        createLoadingUI(modelName);
+        createLoadingUI(
+            modelName
+        );
 
 
-    const modelID =
-        MODELS[modelName];
+    input.disabled = true;
+
+    sendBtn.disabled = true;
 
 
     try {
-
-        // Stop previous model
-        stopCurrentEngine();
-
 
         worker =
             createWorker();
 
 
-        const startTime =
-            performance.now();
+        const modelID =
+            MODELS[modelName];
 
 
         engine =
@@ -282,7 +392,20 @@ async function loadModel(modelName) {
                 {
 
                     initProgressCallback:
-                        (progress) => {
+                        progress => {
+
+                            // If the user selected
+                            // another model while
+                            // this one was loading,
+                            // ignore this request.
+
+                            if (
+                                request !==
+                                loadingRequest
+                            ) {
+                                return;
+                            }
+
 
                             const percent =
                                 Math.max(
@@ -327,34 +450,50 @@ async function loadModel(modelName) {
             );
 
 
+        // --------------------------------
+        // CANCELLED LOAD
+        // --------------------------------
+
+        if (
+            request !==
+            loadingRequest
+        ) {
+
+            try {
+                worker.terminate();
+            }
+            catch (_) {}
+
+            return false;
+        }
+
+
+        // --------------------------------
+        // SUCCESS
+        // --------------------------------
+
         currentModel =
             modelName;
 
 
-        const seconds =
-            (
-                (performance.now() -
-                    startTime) /
-                1000
-            ).toFixed(1);
+        loading = false;
 
 
         if (loadingBox) {
-
             loadingBox.remove();
         }
 
 
-        loading = false;
-
-        updateModelButtons();
-
-
         input.disabled = false;
+
         sendBtn.disabled = false;
+
 
         input.placeholder =
             "Message Assistant...";
+
+
+        updateModelButtons();
 
 
         addMessage(
@@ -365,20 +504,28 @@ async function loadModel(modelName) {
 
         return true;
 
+
     } catch (error) {
 
         console.error(
-            `Failed to load ${modelName}:`,
+            `Model ${modelName} failed:`,
             error
         );
 
 
-        stopCurrentEngine();
+        // Ignore an old request
+        if (
+            request !==
+            loadingRequest
+        ) {
+            return false;
+        }
+
+
+        stopModel();
 
 
         loading = false;
-
-        updateModelButtons();
 
 
         if (loadingBox) {
@@ -386,16 +533,19 @@ async function loadModel(modelName) {
             loadingBox.innerHTML = `
 
                 <strong>
-                    Couldn't load ${modelName}.
+                    ${modelName} couldn't load.
                 </strong>
 
                 <br><br>
 
-                Trying a smaller model may
-                work better on this device.
+                Try a smaller model using
+                the buttons above.
 
             `;
         }
+
+
+        updateModelButtons();
 
 
         return false;
@@ -404,26 +554,54 @@ async function loadModel(modelName) {
 
 
 // ========================================
-// START AI
+// MODEL BUTTONS
 // ========================================
 
-async function startAI() {
+document
+    .querySelectorAll(
+        "[data-model]"
+    )
+    .forEach(
+        button => {
 
-    input.disabled = true;
-    sendBtn.disabled = true;
+            button.addEventListener(
+                "click",
+                async () => {
+
+                    const model =
+                        button.dataset.model;
 
 
-    // Try 1.5B first
-    const success =
-        await loadModel("1.5B");
+                    // Don't allow model changes
+                    // during generation.
+
+                    if (generating) {
+                        return;
+                    }
 
 
-    // Automatically fall back if needed
-    if (!success) {
+                    // Same model
+                    if (
+                        model ===
+                        currentModel &&
+                        engine
+                    ) {
+                        return;
+                    }
 
-        await loadModel("1B");
-    }
-}
+
+                    // This is important:
+                    // loadingRequest changes,
+                    // causing the previous load
+                    // to be ignored.
+
+                    await loadModel(
+                        model
+                    );
+                }
+            );
+        }
+    );
 
 
 // ========================================
@@ -434,8 +612,8 @@ async function sendMessage() {
 
     if (
         !engine ||
-        generating ||
-        loading
+        loading ||
+        generating
     ) {
         return;
     }
@@ -470,9 +648,7 @@ async function sendMessage() {
     });
 
 
-    // Keep context small.
-    // This significantly reduces
-    // repeated computation.
+    // Keep memory small
     if (
         history.length >
         MAX_HISTORY
@@ -489,6 +665,7 @@ async function sendMessage() {
 
     sendBtn.disabled = true;
 
+
     updateModelButtons();
 
 
@@ -502,19 +679,23 @@ async function sendMessage() {
     try {
 
         const systemPrompt = `
-You are Assistant, a smart, helpful and friendly AI.
+You are Assistant, a helpful and intelligent AI.
 
-Rules:
-- Understand the user's question.
-- Answer directly.
-- Be accurate.
-- Never intentionally make up facts.
-- If unsure, say so.
-- Remember recent conversation context.
-- Give working code when requested.
-- Explain difficult things simply.
-- Avoid unnecessary repetition.
-- Use short paragraphs.
+Answer the user's question directly.
+
+Be accurate and honest.
+
+Do not invent information.
+
+If you do not know something, say so.
+
+Remember the recent conversation.
+
+Keep answers reasonably concise.
+
+Use lists when useful.
+
+Give working code when requested.
 `;
 
 
@@ -522,8 +703,11 @@ Rules:
             await engine.chat.completions.create({
 
                 messages: [
+
                     {
-                        role: "system",
+                        role:
+                            "system",
+
                         content:
                             systemPrompt
                     },
@@ -544,16 +728,8 @@ Rules:
 
 
         // --------------------------------
-        // PERFORMANCE OPTIMIZATION
+        // STREAM OPTIMIZATION
         // --------------------------------
-        //
-        // Don't update the DOM for every
-        // single token. Doing that hundreds
-        // of times per second can cause
-        // scrolling and lag.
-        //
-
-        let pendingUpdate = false;
 
         let lastUpdate =
             performance.now();
@@ -582,12 +758,18 @@ Rules:
                 performance.now();
 
 
-            // Update roughly every 50ms
-            // instead of every token.
+            // Don't update the DOM
+            // for every token.
+            //
+            // This prevents the browser
+            // from spending too much time
+            // rendering while the model
+            // is generating.
+
             if (
                 now -
                 lastUpdate >=
-                50
+                60
             ) {
 
                 aiBubble.textContent =
@@ -600,27 +782,14 @@ Rules:
 
                 lastUpdate =
                     now;
-
-                pendingUpdate =
-                    false;
-
-            } else {
-
-                pendingUpdate =
-                    true;
             }
         }
 
 
         // Final update
-        if (pendingUpdate) {
 
-            aiBubble.textContent =
-                answer;
-
-            messages.scrollTop =
-                messages.scrollHeight;
-        }
+        aiBubble.textContent =
+            answer;
 
 
         history.push({
@@ -650,55 +819,22 @@ Rules:
 
 
         aiBubble.textContent =
-            "The AI encountered an error. Try again.";
+            "The AI had trouble generating that answer. Please try again.";
     }
 
 
     generating = false;
 
-    sendBtn.disabled = false;
+
+    sendBtn.disabled =
+        !engine;
+
 
     updateModelButtons();
 
+
     input.focus();
 }
-
-
-// ========================================
-// MODEL SWITCHING
-// ========================================
-
-document
-    .querySelectorAll("[data-model]")
-    .forEach(button => {
-
-        button.addEventListener(
-            "click",
-            async () => {
-
-                if (
-                    loading ||
-                    generating
-                ) {
-                    return;
-                }
-
-
-                const model =
-                    button.dataset.model;
-
-
-                if (
-                    model === currentModel
-                ) {
-                    return;
-                }
-
-
-                await loadModel(model);
-            }
-        );
-    });
 
 
 // ========================================
@@ -712,7 +848,7 @@ sendBtn.addEventListener(
 
 
 // ========================================
-// ENTER TO SEND
+// ENTER
 // ========================================
 
 input.addEventListener(
@@ -747,11 +883,13 @@ newChatBtn.addEventListener(
 
         history = [];
 
-        messages.innerHTML = "";
+
+        messages.innerHTML =
+            "";
 
 
         addMessage(
-            "New chat started. How can I help?",
+            `New chat started. ${currentModel || ""} AI is ready.`,
             "assistant"
         );
     }
@@ -763,6 +901,21 @@ newChatBtn.addEventListener(
 // ========================================
 
 input.disabled = true;
+
 sendBtn.disabled = true;
 
-startAI();
+
+// Set the correct default
+// visually immediately.
+
+currentModel =
+    DEFAULT_MODEL;
+
+updateModelButtons();
+
+
+// Start default model.
+
+loadModel(
+    DEFAULT_MODEL
+);
