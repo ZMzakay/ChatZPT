@@ -1,86 +1,240 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 
-    <title>AI Assistant by zmzakay</title>
+    <meta
+        name="viewport"
+        content="width=device-width, initial-scale=1.0"
+    >
 
-    <link rel="stylesheet" href="style.css">
+    <meta
+        name="theme-color"
+        content="#ffffff"
+    >
+
+    <title>Assistant</title>
+
+    <link
+        rel="stylesheet"
+        href="style.css"
+    >
 </head>
 
 <body>
 
-<div class="app-container">
+    <div class="app-container">
 
-    <header class="app-header">
-        <div class="header-left">
-            <div class="header-title">
-                <span class="ai-icon">✨</span>
-                <h1>Assistant</h1>
+        <!-- ========================= -->
+        <!-- HEADER -->
+        <!-- ========================= -->
+
+        <header class="app-header">
+
+            <div class="header-left">
+
+                <div class="app-logo">
+                    AI
+                </div>
+
+                <div>
+                    <h1>Assistant</h1>
+
+                    <div class="status">
+                        <span class="status-dot"></span>
+                        <span>Browser AI</span>
+                    </div>
+                </div>
+
             </div>
 
-            <span class="credits-badge">by zmzakay</span>
-        </div>
 
-        <button id="newChatBtn" title="New Chat">+</button>
-    </header>
+            <button
+                id="newChatBtn"
+                class="new-chat-btn"
+                type="button"
+            >
+                + New Chat
+            </button>
+
+        </header>
 
 
-    <div id="chatMessages" class="chat-messages">
+        <!-- ========================= -->
+        <!-- MODEL SELECTOR -->
+        <!-- ========================= -->
 
-        <div class="message ai-message">
-            <div class="avatar">AI</div>
+        <div class="model-switcher">
 
-            <div class="message-bubble">
-                Hello! I'm ready. Loading the AI model...
+            <div class="model-title">
+                Model
             </div>
-        </div>
-
-    </div>
 
 
-    <div class="input-container">
+            <button
+                class="model-btn"
+                data-model="1.5B"
+                type="button"
+            >
+                <span class="model-name">
+                    1.5B
+                </span>
 
-        <div class="input-box-wrapper">
+                <span class="model-description">
+                    Best
+                </span>
+            </button>
 
-            <textarea
-                id="userInput"
-                placeholder="Message AI..."
-                rows="1"
-            ></textarea>
 
-            <button id="sendBtn" aria-label="Send">
+            <button
+                class="model-btn"
+                data-model="1B"
+                type="button"
+            >
+                <span class="model-name">
+                    1B
+                </span>
 
-                <svg
-                    width="18"
-                    height="18"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    stroke-width="2.5"
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                >
-                    <line x1="22" y1="2" x2="11" y2="13"></line>
-                    <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
-                </svg>
+                <span class="model-description">
+                    Fast
+                </span>
+            </button>
 
+
+            <button
+                class="model-btn"
+                data-model="0.5B"
+                type="button"
+            >
+                <span class="model-name">
+                    0.5B
+                </span>
+
+                <span class="model-description">
+                    Faster
+                </span>
+            </button>
+
+
+            <button
+                class="model-btn"
+                data-model="0.1B"
+                type="button"
+            >
+                <span class="model-name">
+                    0.1B
+                </span>
+
+                <span class="model-description">
+                    Light
+                </span>
             </button>
 
         </div>
 
-        <div class="footer-note">
-            AI can make mistakes. Built by zmzakay.
+
+        <!-- ========================= -->
+        <!-- CHAT -->
+        <!-- ========================= -->
+
+        <main
+            id="chatMessages"
+            class="chat-messages"
+        >
+
+            <div class="welcome">
+
+                <div class="welcome-icon">
+                    AI
+                </div>
+
+                <h2>
+                    Welcome to Assistant
+                </h2>
+
+                <p>
+                    A free AI that runs directly
+                    in your browser.
+                </p>
+
+                <div class="welcome-note">
+                    No API key required.
+                </div>
+
+            </div>
+
+        </main>
+
+
+        <!-- ========================= -->
+        <!-- INPUT -->
+        <!-- ========================= -->
+
+        <div class="input-area">
+
+            <div class="input-wrapper">
+
+                <textarea
+                    id="userInput"
+                    rows="1"
+                    maxlength="3000"
+                    placeholder="Loading AI..."
+                    autocomplete="off"
+                    disabled
+                ></textarea>
+
+
+                <button
+                    id="sendBtn"
+                    class="send-btn"
+                    type="button"
+                    disabled
+                    aria-label="Send message"
+                >
+                    <svg
+                        viewBox="0 0 24 24"
+                        aria-hidden="true"
+                    >
+                        <path
+                            d="M22 2L11 13"
+                        />
+
+                        <path
+                            d="M22 2L15 22L11 13L2 9L22 2Z"
+                        />
+                    </svg>
+                </button>
+
+            </div>
+
+
+            <div class="input-footer">
+
+                <span>
+                    Runs locally in your browser
+                </span>
+
+                <span>
+                    AI can make mistakes
+                </span>
+
+            </div>
+
         </div>
 
     </div>
 
-</div>
 
+    <!-- IMPORTANT:
+         app.js must be a JavaScript module.
+    -->
 
-<!-- IMPORTANT: This is JavaScript, not TypeScript -->
-<script type="module" src="app.js"></script>
+    <script
+        type="module"
+        src="app.js"
+    ></script>
 
 </body>
+
 </html>
