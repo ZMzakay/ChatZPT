@@ -2,73 +2,58 @@ import {
     CreateWebWorkerMLCEngine
 } from "https://esm.run/@mlc-ai/web-llm";
 
-const userInput = document.getElementById("userInput");
-const sendBtn = document.getElementById("sendBtn");
-const chatMessages = document.getElementById("chatMessages");
+
+// =====================================================
+// ELEMENTS
+// =====================================================
+
+const userInput =
+    document.getElementById("userInput");
+
+const sendBtn =
+    document.getElementById("sendBtn");
+
+const chatMessages =
+    document.getElementById("chatMessages");
+
+
+// =====================================================
+// AI SETTINGS
+// =====================================================
 
 let engine = null;
-let loading = true;
+
+let aiReady = false;
+
 let busy = false;
 
 let chatHistory = [];
 
 
 // =====================================================
-// PICK A SMALL MODEL
+// DEVICE DETECTION
 // =====================================================
 
-// Phones get the tiny model.
-// Computers get the slightly better 360M model.
+// Phones use the smaller model.
+// Computers use the stronger model.
 
 const isPhone =
-    /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+    /Android|iPhone|iPad|iPod/i.test(
+        navigator.userAgent
+    );
+
+
+// =====================================================
+// MODEL
+// =====================================================
 
 const MODEL = isPhone
-    ? "SmolLM2-135M-Instruct-q0f16-MLC"
-    : "SmolLM2-360M-Instruct-q4f16_1-MLC";
+    ? "Qwen2.5-0.5B-Instruct-q4f16_1-MLC"
+    : "Qwen2.5-1.5B-Instruct-q4f16_1-MLC";
 
 
 // =====================================================
-// MESSAGE UI
-// =====================================================
-
-function addMessage(sender, text, type) {
-
-    const message = document.createElement("div");
-
-    message.className =
-        `message ${type}`;
-
-    const avatar =
-        document.createElement("div");
-
-    avatar.className = "avatar";
-
-    avatar.textContent =
-        sender === "AI" ? "AI" : "You";
-
-    const bubble =
-        document.createElement("div");
-
-    bubble.className =
-        "message-bubble";
-
-    bubble.textContent = text;
-
-    message.appendChild(avatar);
-    message.appendChild(bubble);
-
-    chatMessages.appendChild(message);
-
-    chatMessages.scrollTop =
-        chatMessages.scrollHeight;
-
-    return message;
-}
-
-
-// =====================================================
-// LOADING UI
+// LOADING BOX
 // =====================================================
 
 const loadingBox =
@@ -81,10 +66,7 @@ loadingBox.innerHTML = `
         ✨ Preparing Assistant
     </div>
 
-    <div
-        id="aiLoadText"
-        class="ai-load-text"
-    >
+    <div id="aiLoadText" class="ai-load-text">
         Starting AI...
     </div>
 
@@ -109,7 +91,7 @@ chatMessages.appendChild(
 
 
 // =====================================================
-// LOADING CSS
+// LOADING STYLE
 // =====================================================
 
 const style =
@@ -137,6 +119,7 @@ style.textContent = `
     font-size: 13px;
     color: #777;
     margin-bottom: 13px;
+
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -145,22 +128,30 @@ style.textContent = `
 .ai-progress {
     height: 8px;
     width: 100%;
+
     background: #dedede;
+
     border-radius: 20px;
+
     overflow: hidden;
 }
 
 .ai-progress-bar {
     height: 100%;
     width: 0%;
+
     background: #111;
+
     border-radius: 20px;
+
     transition: width .15s linear;
 }
 
 .ai-progress-percent {
     margin-top: 7px;
+
     font-size: 12px;
+
     color: #888;
 }
 
@@ -170,10 +161,75 @@ document.head.appendChild(style);
 
 
 // =====================================================
-// PROGRESS
+// ADD MESSAGE
 // =====================================================
 
-function updateProgress(progress) {
+function addMessage(
+    sender,
+    text,
+    type
+) {
+
+    const message =
+        document.createElement("div");
+
+    message.className =
+        `message ${type}`;
+
+
+    const avatar =
+        document.createElement("div");
+
+    avatar.className =
+        "avatar";
+
+
+    avatar.textContent =
+        sender === "AI"
+            ? "AI"
+            : "You";
+
+
+    const bubble =
+        document.createElement("div");
+
+    bubble.className =
+        "message-bubble";
+
+
+    bubble.textContent =
+        text;
+
+
+    message.appendChild(
+        avatar
+    );
+
+    message.appendChild(
+        bubble
+    );
+
+
+    chatMessages.appendChild(
+        message
+    );
+
+
+    chatMessages.scrollTop =
+        chatMessages.scrollHeight;
+
+
+    return message;
+}
+
+
+// =====================================================
+// LOADING PROGRESS
+// =====================================================
+
+function updateProgress(
+    progress
+) {
 
     const bar =
         document.getElementById(
@@ -190,7 +246,9 @@ function updateProgress(progress) {
             "aiLoadText"
         );
 
+
     if (!bar) return;
+
 
     if (
         typeof progress.progress ===
@@ -206,14 +264,18 @@ function updateProgress(progress) {
                 )
             );
 
+
         bar.style.width =
             `${value}%`;
+
 
         percent.textContent =
             `${Math.round(value)}%`;
     }
 
+
     if (progress.text) {
+
         text.textContent =
             progress.text;
     }
@@ -228,6 +290,14 @@ async function startAI() {
 
     try {
 
+        console.log(
+            "Starting AI:",
+            MODEL
+        );
+
+
+        // Create background worker
+
         const worker =
             new Worker(
                 "./worker.js",
@@ -235,6 +305,9 @@ async function startAI() {
                     type: "module"
                 }
             );
+
+
+        // Load model
 
         engine =
             await CreateWebWorkerMLCEngine(
@@ -247,10 +320,17 @@ async function startAI() {
             );
 
 
-        loading = false;
+        // AI is ready
+
+        aiReady = true;
+
+
+        // Remove loading screen
 
         loadingBox.remove();
 
+
+        // Welcome message
 
         addMessage(
             "AI",
@@ -259,26 +339,56 @@ async function startAI() {
         );
 
 
-        userInput.disabled = false;
+        userInput.disabled =
+            false;
 
-        sendBtn.disabled = false;
+        sendBtn.disabled =
+            false;
+
+
+        userInput.placeholder =
+            "Message Assistant...";
+
 
         userInput.focus();
 
 
+        console.log(
+            "AI ready!"
+        );
+
+
     } catch (error) {
 
-        console.error(error);
+        console.error(
+            "AI failed:",
+            error
+        );
 
-        const text =
+
+        const loadText =
             document.getElementById(
                 "aiLoadText"
             );
 
-        if (text) {
 
-            text.textContent =
-                "AI could not start. Try Chrome or Safari with WebGPU enabled.";
+        if (loadText) {
+
+            loadText.textContent =
+                "Couldn't load the AI. Try refreshing the page.";
+        }
+
+
+        const bar =
+            document.getElementById(
+                "aiProgressBar"
+            );
+
+
+        if (bar) {
+
+            bar.style.width =
+                "100%";
         }
     }
 }
@@ -290,24 +400,33 @@ async function startAI() {
 
 async function sendMessage() {
 
+    // Prevent double messages
+
     if (busy) return;
+
 
     const text =
         userInput.value.trim();
 
+
     if (!text) return;
 
 
-    // Don't allow huge messages.
-    const cleanText =
-        text.slice(0, 2000);
+    // Don't allow enormous messages
 
+    const cleanText =
+        text.slice(0, 3000);
+
+
+    // Clear input
 
     userInput.value = "";
 
     userInput.style.height =
         "auto";
 
+
+    // Show user message
 
     addMessage(
         "You",
@@ -316,25 +435,33 @@ async function sendMessage() {
     );
 
 
+    // Add to history
+
     chatHistory.push({
         role: "user",
         content: cleanText
     });
 
 
-    // Keep memory small.
-    if (chatHistory.length > 6) {
+    // Keep only recent messages.
+    // This makes generation faster.
+
+    if (
+        chatHistory.length > 6
+    ) {
 
         chatHistory =
             chatHistory.slice(-6);
     }
 
 
-    if (loading) {
+    // AI still loading
+
+    if (!aiReady) {
 
         addMessage(
             "AI",
-            "I'm still loading — almost ready!",
+            "I'm still preparing. Your message will be ready shortly!",
             "ai-message"
         );
 
@@ -344,8 +471,11 @@ async function sendMessage() {
 
     busy = true;
 
-    sendBtn.disabled = true;
+    sendBtn.disabled =
+        true;
 
+
+    // Create empty AI message
 
     const aiMessage =
         addMessage(
@@ -363,36 +493,62 @@ async function sendMessage() {
 
     try {
 
+        // Generate response
+
         const stream =
-            await engine.chat.completions.create({
+            await engine
+                .chat
+                .completions
+                .create({
 
-                messages: [
-                    {
-                        role: "system",
-                        content:
-                            "You are a helpful, concise AI assistant. Give short, useful answers."
-                    },
+                    messages: [
 
-                    ...chatHistory
-                ],
+                        {
+                            role: "system",
 
-                temperature: 0.6,
+                            content: `
+You are Assistant, a smart, helpful and friendly AI.
 
-                max_tokens: 180,
+Your rules:
 
-                stream: true
-            });
+- Understand the user's question before answering.
+- Give accurate and useful answers.
+- Never intentionally make up facts.
+- If you are unsure, say that you are unsure.
+- Remember the conversation context.
+- Answer directly instead of repeating the question.
+- Give working code when the user asks for code.
+- Explain difficult things simply.
+- Be friendly but not overly verbose.
+- Use short paragraphs.
+- Use lists when they make the answer clearer.
+`
+                        },
+
+                        ...chatHistory
+
+                    ],
+
+                    temperature: 0.45,
+
+                    max_tokens: 350,
+
+                    stream: true
+                });
 
 
         let answer = "";
 
+
+        // Display response as it generates
 
         for await (
             const chunk of stream
         ) {
 
             const piece =
-                chunk.choices?.[0]
+                chunk
+                    .choices?.[0]
                     ?.delta?.content || "";
 
 
@@ -411,6 +567,8 @@ async function sendMessage() {
         }
 
 
+        // Save AI response
+
         if (answer) {
 
             chatHistory.push({
@@ -418,6 +576,8 @@ async function sendMessage() {
                 content: answer
             });
 
+
+            // Keep history small
 
             if (
                 chatHistory.length > 6
@@ -431,16 +591,21 @@ async function sendMessage() {
 
     } catch (error) {
 
-        console.error(error);
+        console.error(
+            "Generation error:",
+            error
+        );
+
 
         bubble.textContent =
-            "Sorry, something went wrong. Try again.";
+            "Sorry, something went wrong. Please try again.";
     }
 
 
     busy = false;
 
-    sendBtn.disabled = false;
+    sendBtn.disabled =
+        false;
 
     userInput.focus();
 }
@@ -478,7 +643,7 @@ userInput.addEventListener(
 
 
 // =====================================================
-// TEXTAREA
+// AUTO RESIZE INPUT
 // =====================================================
 
 userInput.addEventListener(
@@ -488,6 +653,7 @@ userInput.addEventListener(
         userInput.style.height =
             "auto";
 
+
         userInput.style.height =
             `${userInput.scrollHeight}px`;
     }
@@ -495,11 +661,21 @@ userInput.addEventListener(
 
 
 // =====================================================
-// START
+// INITIAL STATE
 // =====================================================
 
-userInput.disabled = true;
+userInput.disabled =
+    true;
 
-sendBtn.disabled = true;
+sendBtn.disabled =
+    true;
+
+userInput.placeholder =
+    "Preparing AI...";
+
+
+// =====================================================
+// START
+// =====================================================
 
 startAI();
