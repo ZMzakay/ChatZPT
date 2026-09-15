@@ -1,20 +1,14 @@
-import { pipeline } from "https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.7.2/+esm";
-
 const userInput = document.getElementById("userInput");
 const sendBtn = document.getElementById("sendBtn");
 const chatMessages = document.getElementById("chatMessages");
 const newChatBtn = document.getElementById("newChatBtn");
 
-let aiModel = null;
-let isLoading = false;
+// CHANGE THIS to your Cloudflare Worker URL later.
+const API_URL = "YOUR_CLOUDFLARE_WORKER_URL";
 
-
-// -----------------------------
-// Display messages
-// -----------------------------
+let messages = [];
 
 function appendMessage(sender, text, className) {
-
     const messageDiv = document.createElement("div");
     messageDiv.className = `message ${className}`;
 
@@ -30,286 +24,168 @@ function appendMessage(sender, text, className) {
     messageDiv.appendChild(bubble);
 
     chatMessages.appendChild(messageDiv);
-
     chatMessages.scrollTop = chatMessages.scrollHeight;
 }
 
-
-// -----------------------------
-// Loading message
-// -----------------------------
-
-function setLoadingMessage(text) {
-
-    const existing = document.getElementById("loading-message");
-
-    if (existing) {
-        existing.querySelector(".message-bubble").textContent = text;
-        return;
-    }
-
+function showThinking() {
     const div = document.createElement("div");
 
     div.className = "message ai-message";
-    div.id = "loading-message";
+    div.id = "thinking";
 
     div.innerHTML = `
         <div class="avatar">AI</div>
-        <div class="message-bubble">${text}</div>
+        <div class="message-bubble">Thinking...</div>
     `;
 
     chatMessages.appendChild(div);
-
     chatMessages.scrollTop = chatMessages.scrollHeight;
 }
 
-
-function removeLoadingMessage() {
-
-    document.getElementById("loading-message")?.remove();
+function removeThinking() {
+    document.getElementById("thinking")?.remove();
 }
-
-
-// -----------------------------
-// Load AI
-// -----------------------------
-
-async function loadAI() {
-
-    try {
-
-        setLoadingMessage(
-            "Loading AI model... The first load can take a little while."
-        );
-
-        aiModel = await pipeline(
-            "text-generation",
-            "Xenova/distilgpt2"
-        );
-
-        removeLoadingMessage();
-
-        appendMessage(
-            "AI",
-            "I'm ready! Type a message below.",
-            "ai-message"
-        );
-
-        sendBtn.disabled = false;
-
-    } catch (error) {
-
-        console.error("AI loading error:", error);
-
-        removeLoadingMessage();
-
-        appendMessage(
-            "AI",
-            "I couldn't load the AI model. Please refresh the page and try again.",
-            "ai-message"
-        );
-
-        sendBtn.disabled = true;
-    }
-}
-
-
-// -----------------------------
-// Send message
-// -----------------------------
 
 async function handleSend() {
-
     const text = userInput.value.trim();
 
-    if (!text) {
-        return;
-    }
+    if (!text) return;
 
-    if (!aiModel) {
-
+    if (API_URL === "YOUR_CLOUDFLARE_WORKER_URL") {
         appendMessage(
             "AI",
-            "The AI is still loading. Please wait a moment.",
+            "The AI connection has not been configured yet. Add your Cloudflare Worker URL to app.js.",
             "ai-message"
         );
-
         return;
     }
 
-    if (isLoading) {
-        return;
-    }
-
-    isLoading = true;
     sendBtn.disabled = true;
 
-
-    // Show user's message
-
-    appendMessage(
-        "You",
-        text,
-        "user-message"
-    );
+    appendMessage("You", text, "user-message");
 
     userInput.value = "";
     userInput.style.height = "auto";
 
+    messages.push({
+        role: "user",
+        content: text
+    });
 
-    // Show thinking
-
-    setLoadingMessage("Thinking...");
-
+    showThinking();
 
     try {
+        const response = await fetch(API_URL, {
+            method: "POST",
 
-        const output = await aiModel(text, {
+            headers: {
+                "Content-Type": "application/json"
+            },
 
-            max_new_tokens: 60,
-
-            temperature: 0.8,
-
-            do_sample: true,
-
-            repetition_penalty: 1.1
-
+            body: JSON.stringify({
+                messages: messages
+            })
         });
 
-
-        removeLoadingMessage();
-
-
-        let response = output?.[0]?.generated_text;
-
-
-        if (!response) {
-
-            response = "I couldn't generate a response.";
-
-        } else {
-
-            // DistilGPT2 often returns the original prompt
-            // together with the generated text.
-
-            if (response.startsWith(text)) {
-                response = response.slice(text.length).trim();
-            }
-
+        if (!response.ok) {
+            throw new Error(`Server error: ${response.status}`);
         }
 
+        const data = await response.json();
 
-        if (!response) {
-            response = "I couldn't generate a response.";
+        removeThinking();
+
+        const answer =
+            data.reply ||
+            data.text ||
+            data.response;
+
+        if (!answer) {
+            throw new Error("No AI response received.");
         }
 
+        messages.push({
+            role: "assistant",
+            content: answer
+        });
 
         appendMessage(
             "AI",
-            response,
+            answer,
             "ai-message"
         );
-
 
     } catch (error) {
 
-        console.error("Generation error:", error);
+        console.error(error);
 
-        removeLoadingMessage();
+        removeThinking();
 
         appendMessage(
             "AI",
-            "Sorry, something went wrong while generating the response.",
+            "Sorry, I couldn't connect to the AI right now. Please try again.",
             "ai-message"
         );
 
+        // Remove failed user message from conversation history
+        messages.pop();
+
     } finally {
-
-        isLoading = false;
         sendBtn.disabled = false;
-
         userInput.focus();
     }
 }
 
 
-// -----------------------------
 // Send button
-// -----------------------------
-
-sendBtn.addEventListener(
-    "click",
-    handleSend
-);
+sendBtn.addEventListener("click", handleSend);
 
 
-// -----------------------------
-// Enter key
-// -----------------------------
+// Enter = send
+userInput.addEventListener("keydown", (event) => {
 
-userInput.addEventListener(
-    "keydown",
-    (event) => {
+    if (event.key === "Enter" && !event.shiftKey) {
 
-        if (
-            event.key === "Enter" &&
-            !event.shiftKey
-        ) {
+        event.preventDefault();
 
-            event.preventDefault();
-
-            handleSend();
-        }
-
+        handleSend();
     }
-);
+
+});
 
 
-// -----------------------------
-// Auto resize textarea
-// -----------------------------
+// Auto resize
+userInput.addEventListener("input", () => {
 
-userInput.addEventListener(
-    "input",
-    () => {
+    userInput.style.height = "auto";
 
-        userInput.style.height = "auto";
+    userInput.style.height =
+        `${userInput.scrollHeight}px`;
 
-        userInput.style.height =
-            `${userInput.scrollHeight}px`;
-
-    }
-);
+});
 
 
-// -----------------------------
 // New chat
-// -----------------------------
+newChatBtn.addEventListener("click", () => {
 
-newChatBtn.addEventListener(
-    "click",
-    () => {
+    messages = [];
 
-        chatMessages.innerHTML = "";
+    chatMessages.innerHTML = "";
 
-        appendMessage(
-            "AI",
-            "New chat started. What would you like to talk about?",
-            "ai-message"
-        );
+    appendMessage(
+        "AI",
+        "New chat started. What would you like to talk about?",
+        "ai-message"
+    );
 
-        userInput.value = "";
-        userInput.style.height = "auto";
-        userInput.focus();
+    userInput.value = "";
+    userInput.style.height = "auto";
+    userInput.focus();
 
-    }
-);
+});
 
 
-// -----------------------------
-// Start AI
-// -----------------------------
+// Startup message
+sendBtn.disabled = false;
 
-sendBtn.disabled = true;
-
-loadAI();
+console.log("AI Assistant loaded.");
