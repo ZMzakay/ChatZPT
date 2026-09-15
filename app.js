@@ -1,121 +1,57 @@
-import { CreateMLCEngine } from "https://esm.run/@mlc-ai/web-llm";
+import {
+    CreateWebWorkerMLCEngine
+} from "https://esm.run/@mlc-ai/web-llm";
 
 const userInput = document.getElementById("userInput");
 const sendBtn = document.getElementById("sendBtn");
 const chatMessages = document.getElementById("chatMessages");
 
 let engine = null;
+let loading = true;
+let busy = false;
+
 let chatHistory = [];
-let aiReady = false;
-let queuedMessage = null;
-
-const MODEL = "Llama-3.2-1B-Instruct-q4f16_1-MLC";
 
 
-// ========================================
-// CREATE LOADING BAR
-// ========================================
+// =====================================================
+// PICK A SMALL MODEL
+// =====================================================
 
-const loadingBox = document.createElement("div");
+// Phones get the tiny model.
+// Computers get the slightly better 360M model.
 
-loadingBox.id = "aiLoading";
+const isPhone =
+    /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
 
-loadingBox.innerHTML = `
-    <div class="ai-loading-title">
-        ✨ Preparing AI
-    </div>
-
-    <div class="ai-loading-text">
-        Downloading AI model...
-    </div>
-
-    <div class="progress-container">
-        <div class="progress-bar" id="progressBar"></div>
-    </div>
-
-    <div class="progress-percent" id="progressPercent">
-        0%
-    </div>
-`;
-
-chatMessages.appendChild(loadingBox);
+const MODEL = isPhone
+    ? "SmolLM2-135M-Instruct-q0f16-MLC"
+    : "SmolLM2-360M-Instruct-q4f16_1-MLC";
 
 
-// ========================================
-// LOADING BAR STYLE
-// ========================================
-
-const loadingStyle = document.createElement("style");
-
-loadingStyle.textContent = `
-#aiLoading {
-    margin: 20px auto;
-    padding: 20px;
-    max-width: 600px;
-    text-align: center;
-    border-radius: 20px;
-    background: #f5f5f7;
-    font-family: Arial, sans-serif;
-}
-
-.ai-loading-title {
-    font-size: 20px;
-    font-weight: 700;
-    margin-bottom: 8px;
-}
-
-.ai-loading-text {
-    color: #777;
-    font-size: 14px;
-    margin-bottom: 15px;
-}
-
-.progress-container {
-    width: 100%;
-    height: 10px;
-    background: #ddd;
-    border-radius: 20px;
-    overflow: hidden;
-}
-
-.progress-bar {
-    width: 0%;
-    height: 100%;
-    background: #111;
-    border-radius: 20px;
-    transition: width 0.2s ease;
-}
-
-.progress-percent {
-    margin-top: 8px;
-    font-size: 13px;
-    color: #777;
-}
-`;
-
-document.head.appendChild(loadingStyle);
-
-
-// ========================================
-// ADD MESSAGE
-// ========================================
+// =====================================================
+// MESSAGE UI
+// =====================================================
 
 function addMessage(sender, text, type) {
 
     const message = document.createElement("div");
 
-    message.className = `message ${type}`;
+    message.className =
+        `message ${type}`;
 
-    const avatar = document.createElement("div");
+    const avatar =
+        document.createElement("div");
 
     avatar.className = "avatar";
 
     avatar.textContent =
         sender === "AI" ? "AI" : "You";
 
-    const bubble = document.createElement("div");
+    const bubble =
+        document.createElement("div");
 
-    bubble.className = "message-bubble";
+    bubble.className =
+        "message-bubble";
 
     bubble.textContent = text;
 
@@ -131,113 +67,230 @@ function addMessage(sender, text, type) {
 }
 
 
-// ========================================
-// UPDATE LOADING BAR
-// ========================================
+// =====================================================
+// LOADING UI
+// =====================================================
+
+const loadingBox =
+    document.createElement("div");
+
+loadingBox.id = "aiLoading";
+
+loadingBox.innerHTML = `
+    <div class="ai-load-title">
+        ✨ Preparing Assistant
+    </div>
+
+    <div
+        id="aiLoadText"
+        class="ai-load-text"
+    >
+        Starting AI...
+    </div>
+
+    <div class="ai-progress">
+        <div
+            id="aiProgressBar"
+            class="ai-progress-bar"
+        ></div>
+    </div>
+
+    <div
+        id="aiProgressPercent"
+        class="ai-progress-percent"
+    >
+        0%
+    </div>
+`;
+
+chatMessages.appendChild(
+    loadingBox
+);
+
+
+// =====================================================
+// LOADING CSS
+// =====================================================
+
+const style =
+    document.createElement("style");
+
+style.textContent = `
+
+#aiLoading {
+    margin: 18px auto;
+    padding: 18px;
+    width: min(90%, 560px);
+    box-sizing: border-box;
+    text-align: center;
+    background: #f5f5f7;
+    border-radius: 18px;
+}
+
+.ai-load-title {
+    font-size: 19px;
+    font-weight: 700;
+    margin-bottom: 7px;
+}
+
+.ai-load-text {
+    font-size: 13px;
+    color: #777;
+    margin-bottom: 13px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.ai-progress {
+    height: 8px;
+    width: 100%;
+    background: #dedede;
+    border-radius: 20px;
+    overflow: hidden;
+}
+
+.ai-progress-bar {
+    height: 100%;
+    width: 0%;
+    background: #111;
+    border-radius: 20px;
+    transition: width .15s linear;
+}
+
+.ai-progress-percent {
+    margin-top: 7px;
+    font-size: 12px;
+    color: #888;
+}
+
+`;
+
+document.head.appendChild(style);
+
+
+// =====================================================
+// PROGRESS
+// =====================================================
 
 function updateProgress(progress) {
 
     const bar =
-        document.getElementById("progressBar");
+        document.getElementById(
+            "aiProgressBar"
+        );
 
     const percent =
-        document.getElementById("progressPercent");
+        document.getElementById(
+            "aiProgressPercent"
+        );
 
     const text =
-        document.querySelector(".ai-loading-text");
+        document.getElementById(
+            "aiLoadText"
+        );
 
     if (!bar) return;
 
-    let value = 0;
+    if (
+        typeof progress.progress ===
+        "number"
+    ) {
 
-    if (typeof progress.progress === "number") {
-        value = progress.progress * 100;
+        const value =
+            Math.max(
+                0,
+                Math.min(
+                    100,
+                    progress.progress * 100
+                )
+            );
+
+        bar.style.width =
+            `${value}%`;
+
+        percent.textContent =
+            `${Math.round(value)}%`;
     }
 
-    value = Math.max(0, Math.min(100, value));
-
-    bar.style.width = `${value}%`;
-
-    percent.textContent =
-        `${Math.round(value)}%`;
-
     if (progress.text) {
-        text.textContent = progress.text;
+        text.textContent =
+            progress.text;
     }
 }
 
 
-// ========================================
+// =====================================================
 // START AI
-// ========================================
+// =====================================================
 
 async function startAI() {
 
-    // User can type while AI loads
-    sendBtn.disabled = false;
-
     try {
 
-        engine = await CreateMLCEngine(
-            MODEL,
-            {
-                initProgressCallback: updateProgress
-            }
-        );
+        const worker =
+            new Worker(
+                "./worker.js",
+                {
+                    type: "module"
+                }
+            );
 
-        aiReady = true;
+        engine =
+            await CreateWebWorkerMLCEngine(
+                worker,
+                MODEL,
+                {
+                    initProgressCallback:
+                        updateProgress
+                }
+            );
 
-        // Remove loading box
+
+        loading = false;
+
         loadingBox.remove();
+
 
         addMessage(
             "AI",
-            "Hello! I'm ready. Ask me anything.",
+            "Hello! I'm ready. ✨",
             "ai-message"
         );
 
+
+        userInput.disabled = false;
+
+        sendBtn.disabled = false;
+
         userInput.focus();
 
-        // If user typed something while loading,
-        // automatically send it now.
-        if (queuedMessage) {
-
-            const message = queuedMessage;
-
-            queuedMessage = null;
-
-            userInput.value = message;
-
-            await sendMessage();
-        }
 
     } catch (error) {
 
         console.error(error);
 
         const text =
-            document.querySelector(".ai-loading-text");
+            document.getElementById(
+                "aiLoadText"
+            );
 
         if (text) {
+
             text.textContent =
-                "Couldn't load the AI. Try refreshing the page.";
-        }
-
-        const bar =
-            document.getElementById("progressBar");
-
-        if (bar) {
-            bar.style.width = "100%";
+                "AI could not start. Try Chrome or Safari with WebGPU enabled.";
         }
     }
 }
 
 
-// ========================================
+// =====================================================
 // SEND MESSAGE
-// ========================================
+// =====================================================
 
 async function sendMessage() {
+
+    if (busy) return;
 
     const text =
         userInput.value.trim();
@@ -245,112 +298,157 @@ async function sendMessage() {
     if (!text) return;
 
 
-    // If AI isn't ready yet,
-    // save the message and wait.
-    if (!aiReady) {
+    // Don't allow huge messages.
+    const cleanText =
+        text.slice(0, 2000);
 
-        queuedMessage = text;
 
-        userInput.value = "";
+    userInput.value = "";
 
-        userInput.placeholder =
-            "AI is preparing... your message is saved.";
+    userInput.style.height =
+        "auto";
+
+
+    addMessage(
+        "You",
+        cleanText,
+        "user-message"
+    );
+
+
+    chatHistory.push({
+        role: "user",
+        content: cleanText
+    });
+
+
+    // Keep memory small.
+    if (chatHistory.length > 6) {
+
+        chatHistory =
+            chatHistory.slice(-6);
+    }
+
+
+    if (loading) {
+
+        addMessage(
+            "AI",
+            "I'm still loading — almost ready!",
+            "ai-message"
+        );
 
         return;
     }
 
 
-    addMessage(
-        "You",
-        text,
-        "user-message"
-    );
-
-    userInput.value = "";
-
-    userInput.style.height = "auto";
-
-    chatHistory.push({
-        role: "user",
-        content: text
-    });
+    busy = true;
 
     sendBtn.disabled = true;
 
 
-    const thinking =
+    const aiMessage =
         addMessage(
             "AI",
-            "Thinking...",
+            "",
             "ai-message"
+        );
+
+
+    const bubble =
+        aiMessage.querySelector(
+            ".message-bubble"
         );
 
 
     try {
 
-        const result =
+        const stream =
             await engine.chat.completions.create({
 
                 messages: [
                     {
                         role: "system",
                         content:
-                            "You are a helpful, friendly AI assistant. Give clear and useful answers."
+                            "You are a helpful, concise AI assistant. Give short, useful answers."
                     },
+
                     ...chatHistory
                 ],
 
-                temperature: 0.7,
+                temperature: 0.6,
 
-                max_tokens: 512
+                max_tokens: 180,
+
+                stream: true
             });
 
 
-        const answer =
-            result.choices?.[0]?.message?.content ||
-            "Sorry, I couldn't generate a response.";
+        let answer = "";
 
 
-        thinking.remove();
+        for await (
+            const chunk of stream
+        ) {
+
+            const piece =
+                chunk.choices?.[0]
+                    ?.delta?.content || "";
 
 
-        addMessage(
-            "AI",
-            answer,
-            "ai-message"
-        );
+            if (!piece) continue;
 
 
-        chatHistory.push({
-            role: "assistant",
-            content: answer
-        });
+            answer += piece;
+
+
+            bubble.textContent =
+                answer;
+
+
+            chatMessages.scrollTop =
+                chatMessages.scrollHeight;
+        }
+
+
+        if (answer) {
+
+            chatHistory.push({
+                role: "assistant",
+                content: answer
+            });
+
+
+            if (
+                chatHistory.length > 6
+            ) {
+
+                chatHistory =
+                    chatHistory.slice(-6);
+            }
+        }
 
 
     } catch (error) {
 
         console.error(error);
 
-        thinking.querySelector(
-            ".message-bubble"
-        ).textContent =
-            "Something went wrong. Please try again.";
-
-    } finally {
-
-        sendBtn.disabled = false;
-
-        userInput.placeholder =
-            "Message Assistant...";
-
-        userInput.focus();
+        bubble.textContent =
+            "Sorry, something went wrong. Try again.";
     }
+
+
+    busy = false;
+
+    sendBtn.disabled = false;
+
+    userInput.focus();
 }
 
 
-// ========================================
+// =====================================================
 // SEND BUTTON
-// ========================================
+// =====================================================
 
 sendBtn.addEventListener(
     "click",
@@ -358,9 +456,9 @@ sendBtn.addEventListener(
 );
 
 
-// ========================================
+// =====================================================
 // ENTER TO SEND
-// ========================================
+// =====================================================
 
 userInput.addEventListener(
     "keydown",
@@ -379,15 +477,16 @@ userInput.addEventListener(
 );
 
 
-// ========================================
-// TEXTAREA AUTO RESIZE
-// ========================================
+// =====================================================
+// TEXTAREA
+// =====================================================
 
 userInput.addEventListener(
     "input",
     () => {
 
-        userInput.style.height = "auto";
+        userInput.style.height =
+            "auto";
 
         userInput.style.height =
             `${userInput.scrollHeight}px`;
@@ -395,8 +494,12 @@ userInput.addEventListener(
 );
 
 
-// ========================================
+// =====================================================
 // START
-// ========================================
+// =====================================================
+
+userInput.disabled = true;
+
+sendBtn.disabled = true;
 
 startAI();
