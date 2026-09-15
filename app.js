@@ -1,70 +1,123 @@
+import { CreateMLCEngine } from
+    "https://esm.run/@mlc-ai/web-llm";
+
 const userInput = document.getElementById("userInput");
 const sendBtn = document.getElementById("sendBtn");
 const chatMessages = document.getElementById("chatMessages");
 const newChatBtn = document.getElementById("newChatBtn");
 
-// CHANGE THIS to your Cloudflare Worker URL later.
-const API_URL = "YOUR_CLOUDFLARE_WORKER_URL";
-
+let engine = null;
 let messages = [];
 
+const MODEL = "Llama-3.2-1B-Instruct-q4f16_1-MLC";
+
+
+// -----------------------------
+// Add message to chat
+// -----------------------------
+
 function appendMessage(sender, text, className) {
+
     const messageDiv = document.createElement("div");
+
     messageDiv.className = `message ${className}`;
 
     const avatar = document.createElement("div");
+
     avatar.className = "avatar";
-    avatar.textContent = sender === "AI" ? "AI" : "You";
+
+    avatar.textContent =
+        sender === "AI" ? "AI" : "You";
 
     const bubble = document.createElement("div");
+
     bubble.className = "message-bubble";
+
     bubble.textContent = text;
 
     messageDiv.appendChild(avatar);
     messageDiv.appendChild(bubble);
 
     chatMessages.appendChild(messageDiv);
-    chatMessages.scrollTop = chatMessages.scrollHeight;
+
+    chatMessages.scrollTop =
+        chatMessages.scrollHeight;
 }
 
-function showThinking() {
-    const div = document.createElement("div");
 
-    div.className = "message ai-message";
-    div.id = "thinking";
+// -----------------------------
+// Load AI
+// -----------------------------
 
-    div.innerHTML = `
-        <div class="avatar">AI</div>
-        <div class="message-bubble">Thinking...</div>
-    `;
-
-    chatMessages.appendChild(div);
-    chatMessages.scrollTop = chatMessages.scrollHeight;
-}
-
-function removeThinking() {
-    document.getElementById("thinking")?.remove();
-}
-
-async function handleSend() {
-    const text = userInput.value.trim();
-
-    if (!text) return;
-
-    if (API_URL === "YOUR_CLOUDFLARE_WORKER_URL") {
-        appendMessage(
-            "AI",
-            "The AI connection has not been configured yet. Add your Cloudflare Worker URL to app.js.",
-            "ai-message"
-        );
-        return;
-    }
+async function loadAI() {
 
     sendBtn.disabled = true;
 
-    appendMessage("You", text, "user-message");
+    appendMessage(
+        "AI",
+        "Loading the AI into your browser. This may take a few minutes the first time...",
+        "ai-message"
+    );
+
+    try {
+
+        engine = await CreateMLCEngine(
+            MODEL,
+            {
+                initProgressCallback: (progress) => {
+
+                    console.log(
+                        progress.text || progress
+                    );
+
+                }
+            }
+        );
+
+        chatMessages.lastElementChild?.remove();
+
+        appendMessage(
+            "AI",
+            "I'm ready! Ask me anything.",
+            "ai-message"
+        );
+
+        sendBtn.disabled = false;
+
+    } catch (error) {
+
+        console.error(error);
+
+        chatMessages.lastElementChild?.remove();
+
+        appendMessage(
+            "AI",
+            "I couldn't load the AI. Your browser may not support WebGPU, or your device may not have enough memory.",
+            "ai-message"
+        );
+    }
+}
+
+
+// -----------------------------
+// Send message
+// -----------------------------
+
+async function handleSend() {
+
+    const text =
+        userInput.value.trim();
+
+    if (!text || !engine) return;
+
+    appendMessage(
+        "You",
+        text,
+        "user-message"
+    );
 
     userInput.value = "";
+
     userInput.style.height = "auto";
 
     messages.push({
@@ -72,42 +125,43 @@ async function handleSend() {
         content: text
     });
 
-    showThinking();
+    sendBtn.disabled = true;
+
+    appendMessage(
+        "AI",
+        "Thinking...",
+        "ai-message"
+    );
+
+    const thinkingMessage =
+        chatMessages.lastElementChild;
 
     try {
-        const response = await fetch(API_URL, {
-            method: "POST",
 
-            headers: {
-                "Content-Type": "application/json"
-            },
+        const response =
+            await engine.chat.completions.create({
 
-            body: JSON.stringify({
-                messages: messages
-            })
-        });
+                messages: [
+                    {
+                        role: "system",
+                        content:
+                            "You are a helpful AI assistant. Give clear and friendly answers."
+                    },
 
-        if (!response.ok) {
-            throw new Error(`Server error: ${response.status}`);
-        }
+                    ...messages
+                ],
 
-        const data = await response.json();
+                temperature: 0.7,
 
-        removeThinking();
+                max_tokens: 512
+
+            });
 
         const answer =
-            data.reply ||
-            data.text ||
-            data.response;
+            response.choices?.[0]?.message?.content ||
+            "I couldn't generate a response.";
 
-        if (!answer) {
-            throw new Error("No AI response received.");
-        }
-
-        messages.push({
-            role: "assistant",
-            content: answer
-        });
+        thinkingMessage?.remove();
 
         appendMessage(
             "AI",
@@ -115,77 +169,101 @@ async function handleSend() {
             "ai-message"
         );
 
+        messages.push({
+            role: "assistant",
+            content: answer
+        });
+
     } catch (error) {
 
         console.error(error);
 
-        removeThinking();
+        thinkingMessage?.remove();
 
         appendMessage(
             "AI",
-            "Sorry, I couldn't connect to the AI right now. Please try again.",
+            "Something went wrong while generating the response.",
             "ai-message"
         );
 
-        // Remove failed user message from conversation history
-        messages.pop();
-
     } finally {
+
         sendBtn.disabled = false;
+
         userInput.focus();
     }
 }
 
 
-// Send button
-sendBtn.addEventListener("click", handleSend);
+// -----------------------------
+// Enter to send
+// -----------------------------
 
+userInput.addEventListener(
+    "keydown",
+    (event) => {
 
-// Enter = send
-userInput.addEventListener("keydown", (event) => {
+        if (
+            event.key === "Enter" &&
+            !event.shiftKey
+        ) {
 
-    if (event.key === "Enter" && !event.shiftKey) {
+            event.preventDefault();
 
-        event.preventDefault();
-
-        handleSend();
+            handleSend();
+        }
     }
-
-});
-
-
-// Auto resize
-userInput.addEventListener("input", () => {
-
-    userInput.style.height = "auto";
-
-    userInput.style.height =
-        `${userInput.scrollHeight}px`;
-
-});
+);
 
 
+// -----------------------------
+// Resize textarea
+// -----------------------------
+
+userInput.addEventListener(
+    "input",
+    () => {
+
+        userInput.style.height = "auto";
+
+        userInput.style.height =
+            `${userInput.scrollHeight}px`;
+    }
+);
+
+
+// -----------------------------
 // New chat
-newChatBtn.addEventListener("click", () => {
+// -----------------------------
 
-    messages = [];
+if (newChatBtn) {
 
-    chatMessages.innerHTML = "";
+    newChatBtn.addEventListener(
+        "click",
+        () => {
 
-    appendMessage(
-        "AI",
-        "New chat started. What would you like to talk about?",
-        "ai-message"
+            messages = [];
+
+            chatMessages.innerHTML = "";
+
+            appendMessage(
+                "AI",
+                "New chat started. What would you like to talk about?",
+                "ai-message"
+            );
+
+            userInput.value = "";
+
+            userInput.style.height = "auto";
+
+            userInput.focus();
+        }
     );
-
-    userInput.value = "";
-    userInput.style.height = "auto";
-    userInput.focus();
-
-});
+}
 
 
-// Startup message
-sendBtn.disabled = false;
+// -----------------------------
+// Start AI
+// -----------------------------
 
-console.log("AI Assistant loaded.");
+loadAI();
