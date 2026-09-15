@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - main
+
   workflow_dispatch:
 
 permissions:
@@ -16,48 +17,28 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  build:
+
+  deploy:
+
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
     runs-on: ubuntu-latest
 
     steps:
+
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          package-manager-cache: false
-
-      - name: Install dependencies
-        run: npm install
-
-      - name: Build TypeScript
-        run: npx tsc
-
       - name: Configure GitHub Pages
         uses: actions/configure-pages@v5
-
-      - name: Prepare website
-        run: |
-          rm -rf node_modules
-          rm -rf .git
-          rm -rf .github
 
       - name: Upload website
         uses: actions/upload-pages-artifact@v4
         with:
           path: .
 
-  deploy:
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-
-    runs-on: ubuntu-latest
-    needs: build
-
-    steps:
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
