@@ -7,13 +7,25 @@ import {
 // MODELS
 // ========================================
 
-// ALWAYS TRY 1.5B FIRST
-const PRIMARY_MODEL =
-    "Qwen2.5-1.5B-Instruct-q4f16_1-MLC";
+const MODELS = {
+    "1.5B": "Qwen2.5-1.5B-Instruct-q4f16_1-MLC",
 
-// FALLBACK IF 1.5B FAILS
-const FALLBACK_MODEL =
-    "Llama-3.2-1B-Instruct-q4f16_1-MLC";
+    "1B": "Llama-3.2-1B-Instruct-q4f16_1-MLC",
+
+    "0.5B": "Qwen2.5-0.5B-Instruct-q4f16_1-MLC",
+
+    // ~0.135B, closest lightweight model
+    "0.1B": "SmolLM2-135M-Instruct-q0f16-MLC"
+};
+
+
+// ========================================
+// SETTINGS
+// ========================================
+
+const MAX_HISTORY = 6;
+const MAX_INPUT_LENGTH = 3000;
+const MAX_TOKENS = 300;
 
 
 // ========================================
@@ -33,15 +45,23 @@ const newChatBtn =
     document.getElementById("newChatBtn");
 
 
+// ========================================
+// STATE
+// ========================================
+
 let engine = null;
 let worker = null;
+
 let history = [];
+
 let generating = false;
-let currentModel = PRIMARY_MODEL;
+let loading = false;
+
+let currentModel = null;
 
 
 // ========================================
-// MESSAGE UI
+// ADD MESSAGE
 // ========================================
 
 function addMessage(text, role) {
@@ -89,10 +109,10 @@ function addMessage(text, role) {
 
 
 // ========================================
-// LOADING UI
+// LOADING BOX
 // ========================================
 
-function createLoadingUI() {
+function createLoadingUI(modelName) {
 
     const box =
         document.createElement("div");
@@ -100,53 +120,35 @@ function createLoadingUI() {
     box.id =
         "aiLoading";
 
-    box.style.padding =
-        "14px";
-
-    box.style.margin =
-        "10px";
-
-    box.style.borderRadius =
-        "12px";
-
-    box.style.background =
-        "#f1f1f1";
-
-    box.style.fontSize =
-        "14px";
+    box.className =
+        "ai-loading";
 
 
     box.innerHTML = `
 
-        <div id="loadingText">
-            Starting AI...
+        <div class="loading-title">
+            Loading ${modelName} AI...
         </div>
 
-        <div style="
-            width:100%;
-            height:8px;
-            background:#ddd;
-            border-radius:10px;
-            overflow:hidden;
-            margin-top:8px;
-        ">
-
-            <div id="loadingBar" style="
-                width:0%;
-                height:100%;
-                background:#666;
-                transition:width .15s;
-            "></div>
-
+        <div class="loading-bar-container">
+            <div
+                id="loadingBar"
+                class="loading-bar">
+            </div>
         </div>
 
-        <div id="loadingModel"
-             style="
-                margin-top:7px;
-                font-size:12px;
-                opacity:.7;
-             ">
-            Preparing model...
+        <div
+            id="loadingText"
+            class="loading-text">
+            Starting...
+        </div>
+
+        <div
+            id="loadingSpeed"
+            class="loading-speed">
+            The first load can take a while.
+            Future loads should be faster because
+            your browser caches the model.
         </div>
     `;
 
@@ -162,19 +164,41 @@ function createLoadingUI() {
 
 
 // ========================================
-// READY STATE
+// UPDATE BUTTONS
 // ========================================
 
-function setReady() {
+function updateModelButtons() {
 
-    input.disabled = false;
+    const buttons =
+        document.querySelectorAll(
+            "[data-model]"
+        );
 
-    sendBtn.disabled = false;
 
-    input.placeholder =
-        "Message Assistant...";
+    buttons.forEach(button => {
 
-    input.focus();
+        const name =
+            button.dataset.model;
+
+
+        if (name === currentModel) {
+
+            button.classList.add(
+                "active-model"
+            );
+
+        } else {
+
+            button.classList.remove(
+                "active-model"
+            );
+        }
+
+
+        button.disabled =
+            loading ||
+            generating;
+    });
 }
 
 
@@ -194,47 +218,69 @@ function createWorker() {
 
 
 // ========================================
+// STOP CURRENT ENGINE
+// ========================================
+
+function stopCurrentEngine() {
+
+    try {
+
+        if (worker) {
+            worker.terminate();
+        }
+
+    } catch (_) {}
+
+
+    worker = null;
+    engine = null;
+}
+
+
+// ========================================
 // LOAD MODEL
 // ========================================
 
-async function loadModel(
-    modelName,
-    loadingBox
-) {
+async function loadModel(modelName) {
 
-    currentModel =
-        modelName;
-
-
-    const loadingModel =
-        document.getElementById(
-            "loadingModel"
-        );
-
-
-    if (loadingModel) {
-
-        loadingModel.textContent =
-            `Model: ${modelName}`;
+    if (loading) {
+        return false;
     }
 
 
-    // Create a fresh worker
-    // every time we try a model.
-    worker =
-        createWorker();
+    loading = true;
+
+    updateModelButtons();
+
+
+    const loadingBox =
+        createLoadingUI(modelName);
+
+
+    const modelID =
+        MODELS[modelName];
 
 
     try {
 
+        // Stop previous model
+        stopCurrentEngine();
+
+
+        worker =
+            createWorker();
+
+
+        const startTime =
+            performance.now();
+
+
         engine =
             await CreateWebWorkerMLCEngine(
                 worker,
-                modelName,
+                modelID,
                 {
 
-                    // This helps WebLLM
-                    // show download progress.
                     initProgressCallback:
                         (progress) => {
 
@@ -274,11 +320,47 @@ async function loadModel(
 
                                 text.textContent =
                                     progress.text ||
-                                    `Loading AI... ${percent}%`;
+                                    `Loading ${percent}%`;
                             }
                         }
                 }
             );
+
+
+        currentModel =
+            modelName;
+
+
+        const seconds =
+            (
+                (performance.now() -
+                    startTime) /
+                1000
+            ).toFixed(1);
+
+
+        if (loadingBox) {
+
+            loadingBox.remove();
+        }
+
+
+        loading = false;
+
+        updateModelButtons();
+
+
+        input.disabled = false;
+        sendBtn.disabled = false;
+
+        input.placeholder =
+            "Message Assistant...";
+
+
+        addMessage(
+            `${modelName} AI is ready.`,
+            "assistant"
+        );
 
 
         return true;
@@ -291,18 +373,29 @@ async function loadModel(
         );
 
 
-        try {
-
-            worker.terminate();
-
-        } catch (_) {}
+        stopCurrentEngine();
 
 
-        worker =
-            null;
+        loading = false;
 
-        engine =
-            null;
+        updateModelButtons();
+
+
+        if (loadingBox) {
+
+            loadingBox.innerHTML = `
+
+                <strong>
+                    Couldn't load ${modelName}.
+                </strong>
+
+                <br><br>
+
+                Trying a smaller model may
+                work better on this device.
+
+            `;
+        }
 
 
         return false;
@@ -316,127 +409,19 @@ async function loadModel(
 
 async function startAI() {
 
-    const loadingBox =
-        createLoadingUI();
-
-
-    // Disable chat while loading
     input.disabled = true;
     sendBtn.disabled = true;
 
 
-    // ------------------------------------
-    // TRY 1.5B
-    // ------------------------------------
-
-    const primaryLoaded =
-        await loadModel(
-            PRIMARY_MODEL,
-            loadingBox
-        );
+    // Try 1.5B first
+    const success =
+        await loadModel("1.5B");
 
 
-    if (primaryLoaded) {
+    // Automatically fall back if needed
+    if (!success) {
 
-        if (loadingBox) {
-            loadingBox.remove();
-        }
-
-
-        setReady();
-
-
-        addMessage(
-            "I'm ready! Running the 1.5B AI model.",
-            "assistant"
-        );
-
-
-        return;
-    }
-
-
-    // ------------------------------------
-    // 1.5B FAILED → TRY 1B
-    // ------------------------------------
-
-    if (loadingBox) {
-
-        const text =
-            document.getElementById(
-                "loadingText"
-            );
-
-        const model =
-            document.getElementById(
-                "loadingModel"
-            );
-
-
-        if (text) {
-
-            text.textContent =
-                "1.5B was too heavy. Switching to 1B...";
-        }
-
-
-        if (model) {
-
-            model.textContent =
-                "Trying fallback model...";
-        }
-    }
-
-
-    const fallbackLoaded =
-        await loadModel(
-            FALLBACK_MODEL,
-            loadingBox
-        );
-
-
-    if (fallbackLoaded) {
-
-        if (loadingBox) {
-            loadingBox.remove();
-        }
-
-
-        setReady();
-
-
-        addMessage(
-            "I'm ready! The 1.5B model was too heavy for this device, so I'm using the faster 1B model.",
-            "assistant"
-        );
-
-
-        return;
-    }
-
-
-    // ------------------------------------
-    // EVERYTHING FAILED
-    // ------------------------------------
-
-    if (loadingBox) {
-
-        loadingBox.innerHTML = `
-
-            <strong>
-                AI couldn't start.
-            </strong>
-
-            <br><br>
-
-            Your device may not have enough
-            memory or WebGPU may not be available.
-
-            <br><br>
-
-            Try closing other browser tabs
-            and refreshing the page.
-        `;
+        await loadModel("1B");
     }
 }
 
@@ -450,7 +435,7 @@ async function sendMessage() {
     if (
         !engine ||
         generating ||
-        !input.value.trim()
+        loading
     ) {
         return;
     }
@@ -459,7 +444,15 @@ async function sendMessage() {
     const text =
         input.value
             .trim()
-            .slice(0, 3000);
+            .slice(
+                0,
+                MAX_INPUT_LENGTH
+            );
+
+
+    if (!text) {
+        return;
+    }
 
 
     input.value = "";
@@ -477,19 +470,26 @@ async function sendMessage() {
     });
 
 
-    // Keep memory manageable
-    if (history.length > 6) {
+    // Keep context small.
+    // This significantly reduces
+    // repeated computation.
+    if (
+        history.length >
+        MAX_HISTORY
+    ) {
 
         history =
-            history.slice(-6);
+            history.slice(
+                -MAX_HISTORY
+            );
     }
 
 
     generating = true;
 
-
     sendBtn.disabled = true;
-    input.disabled = true;
+
+    updateModelButtons();
 
 
     const aiBubble =
@@ -502,24 +502,19 @@ async function sendMessage() {
     try {
 
         const systemPrompt = `
-
 You are Assistant, a smart, helpful and friendly AI.
 
 Rules:
-
-- Understand the user's question before answering.
-- Give accurate and useful answers.
-- Never intentionally make up facts.
-- If you are unsure, say that you are unsure.
-- Remember the conversation context.
+- Understand the user's question.
 - Answer directly.
+- Be accurate.
+- Never intentionally make up facts.
+- If unsure, say so.
+- Remember recent conversation context.
 - Give working code when requested.
 - Explain difficult things simply.
-- Be friendly.
 - Avoid unnecessary repetition.
 - Use short paragraphs.
-- Use lists when useful.
-
 `;
 
 
@@ -536,15 +531,32 @@ Rules:
                     ...history
                 ],
 
-                temperature: 0.45,
+                temperature: 0.4,
 
-                max_tokens: 350,
+                max_tokens:
+                    MAX_TOKENS,
 
                 stream: true
             });
 
 
         let answer = "";
+
+
+        // --------------------------------
+        // PERFORMANCE OPTIMIZATION
+        // --------------------------------
+        //
+        // Don't update the DOM for every
+        // single token. Doing that hundreds
+        // of times per second can cause
+        // scrolling and lag.
+        //
+
+        let pendingUpdate = false;
+
+        let lastUpdate =
+            performance.now();
 
 
         for await (
@@ -558,9 +570,25 @@ Rules:
                     ?.content;
 
 
-            if (token) {
+            if (!token) {
+                continue;
+            }
 
-                answer += token;
+
+            answer += token;
+
+
+            const now =
+                performance.now();
+
+
+            // Update roughly every 50ms
+            // instead of every token.
+            if (
+                now -
+                lastUpdate >=
+                50
+            ) {
 
                 aiBubble.textContent =
                     answer;
@@ -568,7 +596,30 @@ Rules:
 
                 messages.scrollTop =
                     messages.scrollHeight;
+
+
+                lastUpdate =
+                    now;
+
+                pendingUpdate =
+                    false;
+
+            } else {
+
+                pendingUpdate =
+                    true;
             }
+        }
+
+
+        // Final update
+        if (pendingUpdate) {
+
+            aiBubble.textContent =
+                answer;
+
+            messages.scrollTop =
+                messages.scrollHeight;
         }
 
 
@@ -578,10 +629,15 @@ Rules:
         });
 
 
-        if (history.length > 6) {
+        if (
+            history.length >
+            MAX_HISTORY
+        ) {
 
             history =
-                history.slice(-6);
+                history.slice(
+                    -MAX_HISTORY
+                );
         }
 
 
@@ -594,17 +650,55 @@ Rules:
 
 
         aiBubble.textContent =
-            "Sorry, the AI ran into a problem. Try again.";
+            "The AI encountered an error. Try again.";
     }
 
 
     generating = false;
 
     sendBtn.disabled = false;
-    input.disabled = false;
+
+    updateModelButtons();
 
     input.focus();
 }
+
+
+// ========================================
+// MODEL SWITCHING
+// ========================================
+
+document
+    .querySelectorAll("[data-model]")
+    .forEach(button => {
+
+        button.addEventListener(
+            "click",
+            async () => {
+
+                if (
+                    loading ||
+                    generating
+                ) {
+                    return;
+                }
+
+
+                const model =
+                    button.dataset.model;
+
+
+                if (
+                    model === currentModel
+                ) {
+                    return;
+                }
+
+
+                await loadModel(model);
+            }
+        );
+    });
 
 
 // ========================================
@@ -623,7 +717,7 @@ sendBtn.addEventListener(
 
 input.addEventListener(
     "keydown",
-    (event) => {
+    event => {
 
         if (
             event.key === "Enter" &&
@@ -646,9 +740,15 @@ newChatBtn.addEventListener(
     "click",
     () => {
 
+        if (generating) {
+            return;
+        }
+
+
         history = [];
 
         messages.innerHTML = "";
+
 
         addMessage(
             "New chat started. How can I help?",
@@ -659,7 +759,7 @@ newChatBtn.addEventListener(
 
 
 // ========================================
-// START IMMEDIATELY
+// START
 // ========================================
 
 input.disabled = true;
