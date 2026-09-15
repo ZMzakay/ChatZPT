@@ -3,178 +3,54 @@ import {
 } from "https://esm.run/@mlc-ai/web-llm";
 
 
-// =====================================================
-// ELEMENTS
-// =====================================================
+// ========================================
+// MODELS
+// ========================================
 
-const userInput =
+// ALWAYS TRY 1.5B FIRST
+const PRIMARY_MODEL =
+    "Qwen2.5-1.5B-Instruct-q4f16_1-MLC";
+
+// FALLBACK IF 1.5B FAILS
+const FALLBACK_MODEL =
+    "Llama-3.2-1B-Instruct-q4f16_1-MLC";
+
+
+// ========================================
+// ELEMENTS
+// ========================================
+
+const messages =
+    document.getElementById("chatMessages");
+
+const input =
     document.getElementById("userInput");
 
 const sendBtn =
     document.getElementById("sendBtn");
 
-const chatMessages =
-    document.getElementById("chatMessages");
+const newChatBtn =
+    document.getElementById("newChatBtn");
 
-
-// =====================================================
-// AI SETTINGS
-// =====================================================
 
 let engine = null;
-
-let aiReady = false;
-
-let busy = false;
-
-let chatHistory = [];
+let worker = null;
+let history = [];
+let generating = false;
+let currentModel = PRIMARY_MODEL;
 
 
-// =====================================================
-// DEVICE DETECTION
-// =====================================================
+// ========================================
+// MESSAGE UI
+// ========================================
 
-// Phones use the smaller model.
-// Computers use the stronger model.
+function addMessage(text, role) {
 
-const isPhone =
-    /Android|iPhone|iPad|iPod/i.test(
-        navigator.userAgent
-    );
-
-
-// =====================================================
-// MODEL
-// =====================================================
-
-const MODEL = isPhone
-    ? "Qwen2.5-0.5B-Instruct-q4f16_1-MLC"
-    : "Qwen2.5-1.5B-Instruct-q4f16_1-MLC";
-
-
-// =====================================================
-// LOADING BOX
-// =====================================================
-
-const loadingBox =
-    document.createElement("div");
-
-loadingBox.id = "aiLoading";
-
-loadingBox.innerHTML = `
-    <div class="ai-load-title">
-        ✨ Preparing Assistant
-    </div>
-
-    <div id="aiLoadText" class="ai-load-text">
-        Starting AI...
-    </div>
-
-    <div class="ai-progress">
-        <div
-            id="aiProgressBar"
-            class="ai-progress-bar"
-        ></div>
-    </div>
-
-    <div
-        id="aiProgressPercent"
-        class="ai-progress-percent"
-    >
-        0%
-    </div>
-`;
-
-chatMessages.appendChild(
-    loadingBox
-);
-
-
-// =====================================================
-// LOADING STYLE
-// =====================================================
-
-const style =
-    document.createElement("style");
-
-style.textContent = `
-
-#aiLoading {
-    margin: 18px auto;
-    padding: 18px;
-    width: min(90%, 560px);
-    box-sizing: border-box;
-    text-align: center;
-    background: #f5f5f7;
-    border-radius: 18px;
-}
-
-.ai-load-title {
-    font-size: 19px;
-    font-weight: 700;
-    margin-bottom: 7px;
-}
-
-.ai-load-text {
-    font-size: 13px;
-    color: #777;
-    margin-bottom: 13px;
-
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-}
-
-.ai-progress {
-    height: 8px;
-    width: 100%;
-
-    background: #dedede;
-
-    border-radius: 20px;
-
-    overflow: hidden;
-}
-
-.ai-progress-bar {
-    height: 100%;
-    width: 0%;
-
-    background: #111;
-
-    border-radius: 20px;
-
-    transition: width .15s linear;
-}
-
-.ai-progress-percent {
-    margin-top: 7px;
-
-    font-size: 12px;
-
-    color: #888;
-}
-
-`;
-
-document.head.appendChild(style);
-
-
-// =====================================================
-// ADD MESSAGE
-// =====================================================
-
-function addMessage(
-    sender,
-    text,
-    type
-) {
-
-    const message =
+    const wrapper =
         document.createElement("div");
 
-    message.className =
-        `message ${type}`;
+    wrapper.className =
+        `message ${role}`;
 
 
     const avatar =
@@ -183,409 +59,529 @@ function addMessage(
     avatar.className =
         "avatar";
 
-
     avatar.textContent =
-        sender === "AI"
-            ? "AI"
-            : "You";
+        role === "user"
+            ? "U"
+            : "AI";
 
 
     const bubble =
         document.createElement("div");
 
     bubble.className =
-        "message-bubble";
-
+        "bubble";
 
     bubble.textContent =
         text;
 
 
-    message.appendChild(
-        avatar
-    );
+    wrapper.appendChild(avatar);
+    wrapper.appendChild(bubble);
 
-    message.appendChild(
-        bubble
-    );
+    messages.appendChild(wrapper);
 
-
-    chatMessages.appendChild(
-        message
-    );
+    messages.scrollTop =
+        messages.scrollHeight;
 
 
-    chatMessages.scrollTop =
-        chatMessages.scrollHeight;
-
-
-    return message;
+    return bubble;
 }
 
 
-// =====================================================
-// LOADING PROGRESS
-// =====================================================
+// ========================================
+// LOADING UI
+// ========================================
 
-function updateProgress(
-    progress
+function createLoadingUI() {
+
+    const box =
+        document.createElement("div");
+
+    box.id =
+        "aiLoading";
+
+    box.style.padding =
+        "14px";
+
+    box.style.margin =
+        "10px";
+
+    box.style.borderRadius =
+        "12px";
+
+    box.style.background =
+        "#f1f1f1";
+
+    box.style.fontSize =
+        "14px";
+
+
+    box.innerHTML = `
+
+        <div id="loadingText">
+            Starting AI...
+        </div>
+
+        <div style="
+            width:100%;
+            height:8px;
+            background:#ddd;
+            border-radius:10px;
+            overflow:hidden;
+            margin-top:8px;
+        ">
+
+            <div id="loadingBar" style="
+                width:0%;
+                height:100%;
+                background:#666;
+                transition:width .15s;
+            "></div>
+
+        </div>
+
+        <div id="loadingModel"
+             style="
+                margin-top:7px;
+                font-size:12px;
+                opacity:.7;
+             ">
+            Preparing model...
+        </div>
+    `;
+
+
+    messages.appendChild(box);
+
+    messages.scrollTop =
+        messages.scrollHeight;
+
+
+    return box;
+}
+
+
+// ========================================
+// READY STATE
+// ========================================
+
+function setReady() {
+
+    input.disabled = false;
+
+    sendBtn.disabled = false;
+
+    input.placeholder =
+        "Message Assistant...";
+
+    input.focus();
+}
+
+
+// ========================================
+// CREATE WORKER
+// ========================================
+
+function createWorker() {
+
+    return new Worker(
+        "./worker.js",
+        {
+            type: "module"
+        }
+    );
+}
+
+
+// ========================================
+// LOAD MODEL
+// ========================================
+
+async function loadModel(
+    modelName,
+    loadingBox
 ) {
 
-    const bar =
-        document.getElementById(
-            "aiProgressBar"
-        );
+    currentModel =
+        modelName;
 
-    const percent =
-        document.getElementById(
-            "aiProgressPercent"
-        );
 
-    const text =
+    const loadingModel =
         document.getElementById(
-            "aiLoadText"
+            "loadingModel"
         );
 
 
-    if (!bar) return;
+    if (loadingModel) {
 
-
-    if (
-        typeof progress.progress ===
-        "number"
-    ) {
-
-        const value =
-            Math.max(
-                0,
-                Math.min(
-                    100,
-                    progress.progress * 100
-                )
-            );
-
-
-        bar.style.width =
-            `${value}%`;
-
-
-        percent.textContent =
-            `${Math.round(value)}%`;
+        loadingModel.textContent =
+            `Model: ${modelName}`;
     }
 
 
-    if (progress.text) {
+    // Create a fresh worker
+    // every time we try a model.
+    worker =
+        createWorker();
 
-        text.textContent =
-            progress.text;
-    }
-}
-
-
-// =====================================================
-// START AI
-// =====================================================
-
-async function startAI() {
 
     try {
-
-        console.log(
-            "Starting AI:",
-            MODEL
-        );
-
-
-        // Create background worker
-
-        const worker =
-            new Worker(
-                "./worker.js",
-                {
-                    type: "module"
-                }
-            );
-
-
-        // Load model
 
         engine =
             await CreateWebWorkerMLCEngine(
                 worker,
-                MODEL,
+                modelName,
                 {
+
+                    // This helps WebLLM
+                    // show download progress.
                     initProgressCallback:
-                        updateProgress
+                        (progress) => {
+
+                            const percent =
+                                Math.max(
+                                    0,
+                                    Math.min(
+                                        100,
+                                        Math.round(
+                                            progress.progress *
+                                            100
+                                        )
+                                    )
+                                );
+
+
+                            const bar =
+                                document.getElementById(
+                                    "loadingBar"
+                                );
+
+
+                            const text =
+                                document.getElementById(
+                                    "loadingText"
+                                );
+
+
+                            if (bar) {
+
+                                bar.style.width =
+                                    `${percent}%`;
+                            }
+
+
+                            if (text) {
+
+                                text.textContent =
+                                    progress.text ||
+                                    `Loading AI... ${percent}%`;
+                            }
+                        }
                 }
             );
 
 
-        // AI is ready
-
-        aiReady = true;
-
-
-        // Remove loading screen
-
-        loadingBox.remove();
-
-
-        // Welcome message
-
-        addMessage(
-            "AI",
-            "Hello! I'm ready. ✨",
-            "ai-message"
-        );
-
-
-        userInput.disabled =
-            false;
-
-        sendBtn.disabled =
-            false;
-
-
-        userInput.placeholder =
-            "Message Assistant...";
-
-
-        userInput.focus();
-
-
-        console.log(
-            "AI ready!"
-        );
-
+        return true;
 
     } catch (error) {
 
         console.error(
-            "AI failed:",
+            `Failed to load ${modelName}:`,
             error
         );
 
 
-        const loadText =
-            document.getElementById(
-                "aiLoadText"
-            );
+        try {
+
+            worker.terminate();
+
+        } catch (_) {}
 
 
-        if (loadText) {
+        worker =
+            null;
 
-            loadText.textContent =
-                "Couldn't load the AI. Try refreshing the page.";
-        }
-
-
-        const bar =
-            document.getElementById(
-                "aiProgressBar"
-            );
+        engine =
+            null;
 
 
-        if (bar) {
-
-            bar.style.width =
-                "100%";
-        }
+        return false;
     }
 }
 
 
-// =====================================================
-// SEND MESSAGE
-// =====================================================
+// ========================================
+// START AI
+// ========================================
 
-async function sendMessage() {
+async function startAI() {
 
-    // Prevent double messages
-
-    if (busy) return;
-
-
-    const text =
-        userInput.value.trim();
+    const loadingBox =
+        createLoadingUI();
 
 
-    if (!text) return;
+    // Disable chat while loading
+    input.disabled = true;
+    sendBtn.disabled = true;
 
 
-    // Don't allow enormous messages
+    // ------------------------------------
+    // TRY 1.5B
+    // ------------------------------------
 
-    const cleanText =
-        text.slice(0, 3000);
-
-
-    // Clear input
-
-    userInput.value = "";
-
-    userInput.style.height =
-        "auto";
+    const primaryLoaded =
+        await loadModel(
+            PRIMARY_MODEL,
+            loadingBox
+        );
 
 
-    // Show user message
+    if (primaryLoaded) {
 
-    addMessage(
-        "You",
-        cleanText,
-        "user-message"
-    );
+        if (loadingBox) {
+            loadingBox.remove();
+        }
 
 
-    // Add to history
+        setReady();
 
-    chatHistory.push({
-        role: "user",
-        content: cleanText
-    });
-
-
-    // Keep only recent messages.
-    // This makes generation faster.
-
-    if (
-        chatHistory.length > 6
-    ) {
-
-        chatHistory =
-            chatHistory.slice(-6);
-    }
-
-
-    // AI still loading
-
-    if (!aiReady) {
 
         addMessage(
-            "AI",
-            "I'm still preparing. Your message will be ready shortly!",
-            "ai-message"
+            "I'm ready! Running the 1.5B AI model.",
+            "assistant"
         );
+
 
         return;
     }
 
 
-    busy = true;
+    // ------------------------------------
+    // 1.5B FAILED → TRY 1B
+    // ------------------------------------
 
-    sendBtn.disabled =
-        true;
+    if (loadingBox) {
+
+        const text =
+            document.getElementById(
+                "loadingText"
+            );
+
+        const model =
+            document.getElementById(
+                "loadingModel"
+            );
 
 
-    // Create empty AI message
+        if (text) {
 
-    const aiMessage =
-        addMessage(
-            "AI",
-            "",
-            "ai-message"
+            text.textContent =
+                "1.5B was too heavy. Switching to 1B...";
+        }
+
+
+        if (model) {
+
+            model.textContent =
+                "Trying fallback model...";
+        }
+    }
+
+
+    const fallbackLoaded =
+        await loadModel(
+            FALLBACK_MODEL,
+            loadingBox
         );
 
 
-    const bubble =
-        aiMessage.querySelector(
-            ".message-bubble"
+    if (fallbackLoaded) {
+
+        if (loadingBox) {
+            loadingBox.remove();
+        }
+
+
+        setReady();
+
+
+        addMessage(
+            "I'm ready! The 1.5B model was too heavy for this device, so I'm using the faster 1B model.",
+            "assistant"
+        );
+
+
+        return;
+    }
+
+
+    // ------------------------------------
+    // EVERYTHING FAILED
+    // ------------------------------------
+
+    if (loadingBox) {
+
+        loadingBox.innerHTML = `
+
+            <strong>
+                AI couldn't start.
+            </strong>
+
+            <br><br>
+
+            Your device may not have enough
+            memory or WebGPU may not be available.
+
+            <br><br>
+
+            Try closing other browser tabs
+            and refreshing the page.
+        `;
+    }
+}
+
+
+// ========================================
+// SEND MESSAGE
+// ========================================
+
+async function sendMessage() {
+
+    if (
+        !engine ||
+        generating ||
+        !input.value.trim()
+    ) {
+        return;
+    }
+
+
+    const text =
+        input.value
+            .trim()
+            .slice(0, 3000);
+
+
+    input.value = "";
+
+
+    addMessage(
+        text,
+        "user"
+    );
+
+
+    history.push({
+        role: "user",
+        content: text
+    });
+
+
+    // Keep memory manageable
+    if (history.length > 6) {
+
+        history =
+            history.slice(-6);
+    }
+
+
+    generating = true;
+
+
+    sendBtn.disabled = true;
+    input.disabled = true;
+
+
+    const aiBubble =
+        addMessage(
+            "",
+            "assistant"
         );
 
 
     try {
 
-        // Generate response
+        const systemPrompt = `
 
-        const stream =
-            await engine
-                .chat
-                .completions
-                .create({
-
-                    messages: [
-
-                        {
-                            role: "system",
-
-                            content: `
 You are Assistant, a smart, helpful and friendly AI.
 
-Your rules:
+Rules:
 
 - Understand the user's question before answering.
 - Give accurate and useful answers.
 - Never intentionally make up facts.
 - If you are unsure, say that you are unsure.
 - Remember the conversation context.
-- Answer directly instead of repeating the question.
-- Give working code when the user asks for code.
+- Answer directly.
+- Give working code when requested.
 - Explain difficult things simply.
-- Be friendly but not overly verbose.
+- Be friendly.
+- Avoid unnecessary repetition.
 - Use short paragraphs.
-- Use lists when they make the answer clearer.
-`
-                        },
+- Use lists when useful.
 
-                        ...chatHistory
+`;
 
-                    ],
 
-                    temperature: 0.45,
+        const response =
+            await engine.chat.completions.create({
 
-                    max_tokens: 350,
+                messages: [
+                    {
+                        role: "system",
+                        content:
+                            systemPrompt
+                    },
 
-                    stream: true
-                });
+                    ...history
+                ],
+
+                temperature: 0.45,
+
+                max_tokens: 350,
+
+                stream: true
+            });
 
 
         let answer = "";
 
 
-        // Display response as it generates
-
         for await (
-            const chunk of stream
+            const chunk of response
         ) {
 
-            const piece =
+            const token =
                 chunk
                     .choices?.[0]
-                    ?.delta?.content || "";
+                    ?.delta
+                    ?.content;
 
 
-            if (!piece) continue;
+            if (token) {
+
+                answer += token;
+
+                aiBubble.textContent =
+                    answer;
 
 
-            answer += piece;
-
-
-            bubble.textContent =
-                answer;
-
-
-            chatMessages.scrollTop =
-                chatMessages.scrollHeight;
+                messages.scrollTop =
+                    messages.scrollHeight;
+            }
         }
 
 
-        // Save AI response
-
-        if (answer) {
-
-            chatHistory.push({
-                role: "assistant",
-                content: answer
-            });
+        history.push({
+            role: "assistant",
+            content: answer
+        });
 
 
-            // Keep history small
+        if (history.length > 6) {
 
-            if (
-                chatHistory.length > 6
-            ) {
-
-                chatHistory =
-                    chatHistory.slice(-6);
-            }
+            history =
+                history.slice(-6);
         }
 
 
@@ -597,23 +593,23 @@ Your rules:
         );
 
 
-        bubble.textContent =
-            "Sorry, something went wrong. Please try again.";
+        aiBubble.textContent =
+            "Sorry, the AI ran into a problem. Try again.";
     }
 
 
-    busy = false;
+    generating = false;
 
-    sendBtn.disabled =
-        false;
+    sendBtn.disabled = false;
+    input.disabled = false;
 
-    userInput.focus();
+    input.focus();
 }
 
 
-// =====================================================
+// ========================================
 // SEND BUTTON
-// =====================================================
+// ========================================
 
 sendBtn.addEventListener(
     "click",
@@ -621,11 +617,11 @@ sendBtn.addEventListener(
 );
 
 
-// =====================================================
+// ========================================
 // ENTER TO SEND
-// =====================================================
+// ========================================
 
-userInput.addEventListener(
+input.addEventListener(
     "keydown",
     (event) => {
 
@@ -642,40 +638,31 @@ userInput.addEventListener(
 );
 
 
-// =====================================================
-// AUTO RESIZE INPUT
-// =====================================================
+// ========================================
+// NEW CHAT
+// ========================================
 
-userInput.addEventListener(
-    "input",
+newChatBtn.addEventListener(
+    "click",
     () => {
 
-        userInput.style.height =
-            "auto";
+        history = [];
 
+        messages.innerHTML = "";
 
-        userInput.style.height =
-            `${userInput.scrollHeight}px`;
+        addMessage(
+            "New chat started. How can I help?",
+            "assistant"
+        );
     }
 );
 
 
-// =====================================================
-// INITIAL STATE
-// =====================================================
+// ========================================
+// START IMMEDIATELY
+// ========================================
 
-userInput.disabled =
-    true;
-
-sendBtn.disabled =
-    true;
-
-userInput.placeholder =
-    "Preparing AI...";
-
-
-// =====================================================
-// START
-// =====================================================
+input.disabled = true;
+sendBtn.disabled = true;
 
 startAI();
